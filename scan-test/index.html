@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#B5121B">
+<title>Uji Scan Barcode · NDD Stock Count</title>
+<style>
+:root{--red:#B5121B;--ink:#1d1d1b;--mute:#5f6368;--line:#e2e2e2;--ok:#1b5e20;--okbg:#e3f4e8;--warn:#8a5300;--warnbg:#fdf0dc;--bg:#f6f6f6;--card:#fff}
+@media (prefers-color-scheme:dark){:root{--ink:#f1f0ec;--mute:#b0afa9;--line:#3a3a38;--bg:#141414;--card:#1e1e1d;--okbg:#14301c;--ok:#8fd19e;--warnbg:#3a2a10;--warn:#f2c27a}}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:16px}
+header{background:var(--red);color:#fff;padding:14px 16px}
+header h1{margin:0;font-size:18px}
+header p{margin:2px 0 0;font-size:13px;opacity:.9}
+main{max-width:640px;margin:0 auto;padding:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+.btn{appearance:none;border:0;border-radius:10px;padding:12px 16px;font:inherit;font-weight:600;background:var(--red);color:#fff;min-height:48px}
+.btn.sec{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn:disabled{opacity:.5}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.grow{flex:1}
+#view{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:4/3;display:none}
+#view.on{display:block}
+video{width:100%;height:100%;object-fit:cover;display:block}
+#aim{position:absolute;left:8%;right:8%;top:32%;height:36%;border:3px solid rgba(255,255,255,.9);border-radius:10px;box-shadow:0 0 0 999px rgba(0,0,0,.35)}
+#aim.hit{border-color:#4ade80}
+#hint{position:absolute;left:0;right:0;bottom:10px;text-align:center;color:#fff;font-size:14px;text-shadow:0 1px 2px #000}
+#result{font-size:22px;font-weight:700;letter-spacing:.5px;word-break:break-all}
+.muted{color:var(--mute);font-size:13px}
+.banner{border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:12px}
+.banner.warn{background:var(--warnbg);color:var(--warn)}
+.banner.ok{background:var(--okbg);color:var(--ok)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{padding:8px 6px;border-top:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:12px;color:var(--mute);font-weight:600}
+input[type=text]{width:100%;font:inherit;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);min-height:48px}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <h1>Uji Scan Barcode</h1>
+  <p>NDD Stock Count · halaman uji, tidak menyimpan data ke server</p>
+</header>
+<main>
+  <div id="inapp" class="banner warn hidden"></div>
+
+  <div class="card">
+    <div class="row">
+      <button id="start" class="btn grow" type="button">Buka kamera</button>
+      <button id="stop" class="btn sec hidden" type="button">Tutup kamera</button>
+      <button id="torch" class="btn sec hidden" type="button" aria-pressed="false">Senter</button>
+    </div>
+    <p class="muted" id="status">Kamera belum dibuka.</p>
+    <div id="view" aria-label="Pratinjau kamera">
+      <video id="video" playsinline muted autoplay></video>
+      <div id="aim"></div>
+      <div id="hint">Arahkan barcode ke dalam kotak, jarak 10–20 cm</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="muted">Hasil terakhir</div>
+    <div id="result">-</div>
+    <div class="muted" id="resultMeta"></div>
+  </div>
+
+  <div class="card">
+    <label for="wedge" class="muted">Scanner handheld (yang bekerja seperti keyboard): klik kolom ini lalu scan</label>
+    <input id="wedge" type="text" inputmode="none" autocomplete="off" placeholder="Hasil scanner muncul di sini">
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div class="grow"><b>Riwayat scan</b> <span class="muted" id="count">(0)</span></div>
+      <button id="copy" class="btn sec" type="button">Salin hasil</button>
+      <button id="clear" class="btn sec" type="button">Hapus</button>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>Barcode</th><th>Jenis</th><th>Waktu baca</th><th>Sumber</th></tr></thead>
+      <tbody id="log"></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <b>Info perangkat</b>
+    <div class="muted" id="device" style="white-space:pre-line;margin-top:6px"></div>
+  </div>
+</main>
+
+<script src="zxing.js"></script>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var video = $("video"), stream = null, track = null, running = false, busy = false;
+  var tStart = 0, lastText = "", lastAt = 0, scans = [];
+  var canvas = document.createElement("canvas"), ctx = canvas.getContext("2d", { willReadFrequently: true });
+  var ready = null, frameNo = 0, SCALES = [1, 0.7, 0.5];
+
+  function status(t) { $("status").textContent = t; }
+
+  /* in-app browser detection (WhatsApp, Instagram, Facebook, LINE, TikTok) */
+  var ua = navigator.userAgent || "";
+  var inApp = /WhatsApp|Instagram|FBAN|FBAV|FB_IAB|Line\/|TikTok|; wv\)/i.test(ua);
+  function openOutsideHtml() {
+    var url = location.href;
+    if (/Android/i.test(ua)) {
+      var intent = "intent://" + url.replace(/^https?:\/\//, "") + "#Intent;scheme=https;package=com.android.chrome;end";
+      return '<a href="' + intent + '" class="btn" style="display:inline-block;text-decoration:none;margin-top:8px">Buka di Chrome</a>';
+    }
+    return '<div style="margin-top:6px">Tekan menu (⋯ atau ikon kompas) lalu pilih <b>Buka di Safari</b>.</div>';
+  }
+  if (inApp) {
+    $("inapp").innerHTML = "Halaman ini dibuka di browser bawaan aplikasi. Kamera mungkin tidak bisa dipakai di sini." + openOutsideHtml();
+    $("inapp").classList.remove("hidden");
+  }
+
+  function loadEngine() {
+    if (!ready) {
+      ready = ZXingWASM.prepareZXingModule({
+        overrides: { locateFile: function (p) { return p.endsWith(".wasm") ? "zxing_reader.wasm" : p; } },
+        fireImmediately: true
+      });
+    }
+    return ready;
+  }
+
+  function describeDevice(settings) {
+    var lines = ["Browser: " + ua];
+    lines.push("Mode: " + (inApp ? "browser bawaan aplikasi" : "browser biasa") + (window.isSecureContext ? ", HTTPS" : ", BUKAN HTTPS"));
+    if (track) lines.push("Kamera: " + (track.label || "-"));
+    if (settings) lines.push("Resolusi: " + settings.width + " x " + settings.height + (settings.focusMode ? ", fokus " + settings.focusMode : ""));
+    $("device").textContent = lines.join("\n");
+  }
+  describeDevice();
+
+  async function start() {
+    $("start").disabled = true;
+    status("Menyiapkan pembaca barcode…");
+    try { await loadEngine(); }
+    catch (e) { status("Gagal memuat pembaca barcode. Cek internet lalu muat ulang halaman."); $("start").disabled = false; return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      status("Browser ini tidak mendukung kamera." + (inApp ? " Buka halaman ini di Chrome atau Safari." : ""));
+      $("start").disabled = false; return;
+    }
+    status("Meminta izin kamera…");
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+      });
+    } catch (e) {
+      var why = e && e.name === "NotAllowedError" ? "Izin kamera ditolak. Izinkan kamera di pengaturan browser lalu coba lagi."
+        : e && e.name === "NotFoundError" ? "Kamera tidak ditemukan."
+        : e && e.name === "NotReadableError" ? "Kamera sedang dipakai aplikasi lain. Tutup aplikasi itu lalu coba lagi."
+        : "Kamera tidak bisa dibuka (" + (e && e.name || "error") + ").";
+      status(why + (inApp ? " Coba buka halaman ini di Chrome atau Safari." : ""));
+      $("start").disabled = false; return;
+    }
+    track = stream.getVideoTracks()[0];
+    try { await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch (e) {}
+    video.srcObject = stream;
+    try { await video.play(); } catch (e) {}
+    var caps = track.getCapabilities ? track.getCapabilities() : {};
+    $("torch").classList.toggle("hidden", !caps.torch);
+    $("view").classList.add("on");
+    $("stop").classList.remove("hidden");
+    $("start").classList.add("hidden");
+    $("start").disabled = false;
+    describeDevice(track.getSettings ? track.getSettings() : null);
+    status("Kamera aktif. Arahkan barcode ke kotak.");
+    running = true; tStart = performance.now();
+    loop();
+  }
+
+  function stop() {
+    running = false;
+    if (stream) stream.getTracks().forEach(function (t) { t.stop(); });
+    stream = null; track = null;
+    $("view").classList.remove("on");
+    $("stop").classList.add("hidden"); $("torch").classList.add("hidden");
+    $("start").classList.remove("hidden");
+    status("Kamera ditutup.");
+  }
+
+  async function loop() {
+    if (!running) return;
+    if (!busy && video.readyState >= 2 && video.videoWidth) {
+      busy = true;
+      try {
+        var vw = video.videoWidth, vh = video.videoHeight;
+        /* read the centre band where the aim box is; scale down very large frames */
+        var sx = Math.round(vw * 0.05), sw = vw - 2 * sx, sy = Math.round(vh * 0.2), sh = vh - 2 * sy;
+        /* alternate the decode size frame by frame: full size reads small/far codes,
+           smaller sizes read close codes with glare or soft focus */
+        frameNo = (frameNo + 1) % SCALES.length;
+        var scale = Math.min(1, 1600 / sw) * SCALES[frameNo];
+        canvas.width = Math.round(sw * scale); canvas.height = Math.round(sh * scale);
+        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+        var img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        var res = await ZXingWASM.readBarcodes(img, {
+          formats: ["EAN-13", "EAN-8", "UPC-A", "UPC-E", "ITF", "Code128"],
+          tryHarder: true, tryRotate: true, maxNumberOfSymbols: 1
+        });
+        var hit = res.find(function (r) { return r.isValid && r.text; });
+        if (hit) found(hit.text, hit.format, "kamera");
+      } catch (e) { /* skip this frame */ }
+      busy = false;
+    }
+    requestAnimationFrame(loop);
+  }
+
+  function found(text, format, source) {
+    var now = performance.now();
+    if (text === lastText && now - lastAt < 2500) return;
+    var secs = source === "kamera" ? ((now - tStart) / 1000) : null;
+    lastText = text; lastAt = now; tStart = now;
+    $("result").textContent = text;
+    $("resultMeta").textContent = format + (secs != null ? " · terbaca dalam " + secs.toFixed(1) + " detik" : "") + " · " + source;
+    $("aim").classList.add("hit"); setTimeout(function () { $("aim").classList.remove("hit"); }, 600);
+    if (navigator.vibrate) navigator.vibrate(80);
+    scans.unshift({ text: text, format: format, secs: secs, source: source, at: new Date() });
+    render();
+  }
+
+  function render() {
+    $("count").textContent = "(" + scans.length + ")";
+    var tb = $("log"); tb.textContent = "";
+    scans.forEach(function (s, i) {
+      var tr = document.createElement("tr");
+      [String(scans.length - i), s.text, s.format, s.secs != null ? s.secs.toFixed(1) + " dtk" : "-", s.source].forEach(function (v) {
+        var td = document.createElement("td"); td.textContent = v; tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+  }
+
+  /* handheld scanner: types digits then Enter */
+  $("wedge").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      var v = e.target.value.trim(); e.target.value = "";
+      if (v) found(v, /^\d{14}$/.test(v) ? "ITF" : /^\d{13}$/.test(v) ? "EAN-13" : "Teks", "scanner");
+      e.preventDefault();
+    }
+  });
+
+  $("start").addEventListener("click", start);
+  $("stop").addEventListener("click", stop);
+  $("torch").addEventListener("click", async function () {
+    if (!track) return;
+    var on = $("torch").getAttribute("aria-pressed") !== "true";
+    try { await track.applyConstraints({ advanced: [{ torch: on }] }); $("torch").setAttribute("aria-pressed", String(on)); $("torch").textContent = on ? "Senter mati" : "Senter"; }
+    catch (e) { status("Senter tidak didukung di HP ini."); }
+  });
+  $("clear").addEventListener("click", function () { scans = []; lastText = ""; render(); $("result").textContent = "-"; $("resultMeta").textContent = ""; });
+  $("copy").addEventListener("click", async function () {
+    var txt = ["Barcode\tJenis\tDetik\tSumber"].concat(scans.slice().reverse().map(function (s) { return [s.text, s.format, s.secs != null ? s.secs.toFixed(1) : "", s.source].join("\t"); })).join("\n") + "\n\n" + $("device").textContent;
+    try { await navigator.clipboard.writeText(txt); status("Hasil disalin. Tempel di chat."); }
+    catch (e) { status("Gagal menyalin. Screenshot tabel ini saja."); }
+  });
+  document.addEventListener("visibilitychange", function () { if (document.hidden && running) stop(); });
+})();
+</script>
+</body>
+</html>
