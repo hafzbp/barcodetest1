@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#B5121B">
+<title>Prototipe scan dan hitung · NDD Stock Count</title>
+<style>
+:root{--red:#B5121B;--ink:#1d1d1b;--mute:#5f6368;--line:#e2e2e2;--ok:#1b7a3a;--okbg:#e3f4e8;--warn:#8a5300;--warnbg:#fdf0dc;--bg:#f6f6f6;--card:#fff}
+@media (prefers-color-scheme:dark){:root{--ink:#f1f0ec;--mute:#b0afa9;--line:#3a3a38;--bg:#141414;--card:#1e1e1d;--okbg:#14301c;--ok:#8fd19e;--warnbg:#3a2a10;--warn:#f2c27a}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:16px}
+header{background:var(--red);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:8px}
+header h1{margin:0;font-size:17px;flex:1}
+header span{font-size:12px;opacity:.9}
+.demo{background:var(--warnbg);color:var(--warn);font-size:13px;padding:8px 16px}
+main{max-width:640px;margin:0 auto;padding:12px 12px 120px}
+.btn{appearance:none;border:0;border-radius:10px;padding:12px 16px;font:inherit;font-weight:600;background:var(--red);color:#fff;min-height:48px;cursor:pointer}
+.btn.sec{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn:disabled{opacity:.45}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+.muted{color:var(--mute);font-size:13px}
+#view{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:4/3}
+video{width:100%;height:100%;object-fit:cover;display:block}
+#aim{position:absolute;left:8%;right:8%;top:30%;height:40%;border:3px solid rgba(255,255,255,.9);border-radius:12px;box-shadow:0 0 0 999px rgba(0,0,0,.35);transition:border-color .15s}
+#aim.hit{border-color:#22c55e}
+#hint{position:absolute;left:0;right:0;bottom:10px;text-align:center;color:#fff;font-size:14px;text-shadow:0 1px 2px #000}
+#idle{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#fff;text-align:center;padding:16px}
+/* detected tick */
+#tick{position:absolute;left:50%;top:50%;width:112px;height:112px;margin:-56px 0 0 -56px;border-radius:50%;background:rgba(34,197,94,.95);display:flex;align-items:center;justify-content:center;transform:scale(0);opacity:0;pointer-events:none}
+#tick.on{animation:pop .45s cubic-bezier(.2,1.4,.4,1) forwards}
+#tick svg path{stroke-dasharray:60;stroke-dashoffset:60}
+#tick.on svg path{animation:draw .35s .15s ease-out forwards}
+@keyframes pop{0%{transform:scale(.2);opacity:0}100%{transform:scale(1);opacity:1}}
+@keyframes draw{to{stroke-dashoffset:0}}
+@media (prefers-reduced-motion:reduce){#tick.on{animation:none;transform:scale(1);opacity:1}#tick.on svg path{animation:none;stroke-dashoffset:0}}
+/* sheet */
+#shade{position:fixed;inset:0;background:rgba(0,0,0,.4);opacity:0;pointer-events:none;transition:opacity .2s}
+#shade.on{opacity:1;pointer-events:auto}
+#sheet{position:fixed;left:0;right:0;bottom:0;max-height:88vh;overflow:auto;background:var(--card);border-radius:16px 16px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));transform:translateY(105%);transition:transform .25s ease-out;box-shadow:0 -4px 20px rgba(0,0,0,.25)}
+#sheet.on{transform:translateY(0)}
+@media (min-width:700px){#sheet{max-width:640px;margin:0 auto}}
+.found{display:flex;align-items:center;gap:8px;color:var(--ok);font-weight:600;font-size:14px}
+.unk{display:flex;align-items:center;gap:8px;color:var(--warn);font-weight:600;font-size:14px}
+.skuname{font-size:20px;font-weight:700;margin:6px 0 2px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}
+.chip{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:10px 14px;font:inherit;font-size:14px;font-weight:600;min-height:44px;cursor:pointer}
+.chip.on{background:var(--red);border-color:var(--red);color:#fff}
+.step{display:flex;align-items:center;gap:8px;padding:6px 0}
+.step .lab{flex:1;font-weight:600}
+.step .lab small{display:block;font-weight:400;color:var(--mute);font-size:12px}
+.step button{width:52px;height:52px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--red);font-size:26px;font-weight:600;cursor:pointer}
+.step input{width:84px;height:52px;border-radius:12px;border:1px solid var(--line);text-align:center;font:inherit;font-size:22px;font-weight:700;background:var(--card);color:var(--ink)}
+.step input:focus{outline:3px solid var(--red);outline-offset:1px}
+.step.focus .lab{color:var(--red)}
+.total{display:flex;justify-content:space-between;align-items:center;background:var(--okbg);color:var(--ok);border-radius:10px;padding:10px 12px;font-weight:700;margin:8px 0}
+.prev{background:var(--warnbg);color:var(--warn);border-radius:10px;padding:8px 12px;font-size:14px;margin:8px 0}
+.row{display:flex;gap:8px}
+.grow{flex:1}
+input[type=search]{width:100%;font:inherit;padding:12px;border:1px solid var(--line);border-radius:10px;min-height:48px;background:var(--card);color:var(--ink)}
+.pick{display:block;width:100%;text-align:left;appearance:none;border:0;border-top:1px solid var(--line);background:none;color:var(--ink);font:inherit;padding:12px 4px;cursor:pointer}
+.pick small{display:block;color:var(--mute)}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(150%);background:#1d1d1b;color:#fff;border-radius:999px;padding:12px 18px;font-size:14px;transition:transform .25s;max-width:92vw;text-align:center;z-index:5}
+#toast.on{transform:translateX(-50%) translateY(0)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{padding:8px 6px;border-top:1px solid var(--line);text-align:left}
+th{font-size:12px;color:var(--mute)}
+td.n{text-align:right}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<header><h1>Hitung stok</h1><span>Prototipe</span></header>
+<div class="demo">Prototipe: SKU dan bulan batch di sini contoh, data tidak dikirim ke server. Barcode yang tidak ada di contoh akan tampil sebagai "belum terdaftar".</div>
+<main>
+  <div class="card">
+    <div id="view">
+      <video id="video" playsinline muted autoplay></video>
+      <div id="aim" class="hidden"></div>
+      <div id="hint" class="hidden">Arahkan barcode ke kotak, jarak 10–20 cm</div>
+      <div id="tick" aria-hidden="true"><svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+      <div id="idle">
+        <div>Kamera dipakai untuk membaca barcode</div>
+        <button id="start" class="btn" type="button">Mulai scan</button>
+        <div id="camErr" class="muted" style="color:#fff"></div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="manual" class="btn sec grow" type="button">Cari SKU tanpa scan</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <b>Sudah dihitung</b> <span class="muted" id="cnt">(0)</span>
+    <table><thead><tr><th>SKU</th><th>Batch</th><th>Isi</th><th class="n">Total pcs</th></tr></thead><tbody id="done"></tbody></table>
+  </div>
+</main>
+
+<div id="shade"></div>
+<div id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle"></div>
+<div id="toast" role="status"></div>
+
+<script src="../scan-test/zxing.js"></script>
+<script>
+(function () {
+  "use strict";
+  /* ---------- demo master (replaced by real SKU, barcode and MB52 data in the app) ---------- */
+  var SKUS = [
+    { code: "SKU-DEMO-01", name: "Produk contoh dari foto (nama asli menyusul)", per: 24, perBox: 0, batches: ["2027-03", "2027-05"] },
+    { code: "SKU-DEMO-02", name: "Contoh wafer coklat 50g", per: 120, perBox: 10, batches: ["2027-01"] },
+    { code: "SKU-DEMO-03", name: "Contoh roll cake 18g", per: 120, perBox: 20, batches: ["2026-12", "2027-02"] },
+    { code: "SKU-DEMO-04", name: "Contoh snack 25g", per: 60, perBox: 0, batches: [] }
+  ];
+  var BARCODES = { "8993175536707": { code: "SKU-DEMO-01", uom: "PCS" }, "18993175536704": { code: "SKU-DEMO-01", uom: "CTN" } };
+  var MON = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var video = $("video"), stream = null, running = false, paused = true, busy = false, frameNo = 0, SCALES = [1, 0.7, 0.5];
+  var canvas = document.createElement("canvas"), ctx = canvas.getContext("2d", { willReadFrequently: true });
+  var lines = {}; /* key code|batch -> {ctn, box, pcs} */
+  var audio = null, ready = null, lastCode = "", quietUntil = 0;
+
+  function sku(code) { return SKUS.find(function (s) { return s.code === code; }); }
+  function bLabel(b) { if (!b) return "Tanpa tanggal"; var m = /^(\d{4})-(\d{2})$/.exec(b); return m ? MON[+m[2] - 1] + " " + m[1] : b; }
+  function key(code, b) { return code + "|" + (b || ""); }
+  function toPcs(s, l) { return (l.ctn || 0) * (s.per || 0) + (l.box || 0) * (s.perBox || 0) + (l.pcs || 0); }
+  function fmt(n) { return Number(n).toLocaleString("id-ID"); }
+  function el(tag, attrs, kids) {
+    var e = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === "text") e.textContent = attrs[k];
+      else if (k.indexOf("on") === 0) e.addEventListener(k.slice(2), attrs[k]);
+      else e.setAttribute(k, attrs[k]);
+    });
+    (kids || []).forEach(function (c) { if (c) e.appendChild(c); });
+    return e;
+  }
+  function toast(t) { var x = $("toast"); x.textContent = t; x.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(function () { x.classList.remove("on"); }, 2200); }
+
+  function beep() {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      var o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = 1760; g.gain.value = 0.12; o.connect(g); g.connect(audio.destination);
+      o.start(); o.stop(audio.currentTime + 0.09);
+    } catch (e) {}
+    if (navigator.vibrate) navigator.vibrate(60);
+  }
+
+  /* ---------- camera ---------- */
+  function engine() {
+    if (!ready) ready = ZXingWASM.prepareZXingModule({ overrides: { locateFile: function (p) { return p.endsWith(".wasm") ? "../scan-test/zxing_reader.wasm" : p; } }, fireImmediately: true });
+    return ready;
+  }
+  async function start() {
+    $("start").disabled = true; $("camErr").textContent = "";
+    try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); if (audio.resume) audio.resume(); } catch (e) {}
+    try { await engine(); } catch (e) { $("camErr").textContent = "Gagal memuat pembaca barcode. Cek internet."; $("start").disabled = false; return; }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } } });
+    } catch (e) {
+      $("camErr").textContent = (e && e.name === "NotAllowedError") ? "Izin kamera ditolak. Izinkan kamera lalu coba lagi, atau pakai Cari SKU tanpa scan." : "Kamera tidak bisa dibuka. Pakai Cari SKU tanpa scan, atau buka halaman ini di Chrome/Safari.";
+      $("start").disabled = false; return;
+    }
+    var t = stream.getVideoTracks()[0];
+    try { await t.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch (e) {}
+    video.srcObject = stream; try { await video.play(); } catch (e) {}
+    $("idle").classList.add("hidden"); $("aim").classList.remove("hidden"); $("hint").classList.remove("hidden");
+    running = true; paused = false; loop();
+  }
+  async function loop() {
+    if (!running) return;
+    if (!busy && !paused && video.readyState >= 2 && video.videoWidth) {
+      busy = true;
+      try {
+        var vw = video.videoWidth, vh = video.videoHeight, sx = Math.round(vw * .05), sw = vw - 2 * sx, sy = Math.round(vh * .2), sh = vh - 2 * sy;
+        frameNo = (frameNo + 1) % SCALES.length;
+        var sc = Math.min(1, 1600 / sw) * SCALES[frameNo];
+        canvas.width = Math.round(sw * sc); canvas.height = Math.round(sh * sc);
+        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+        var res = await ZXingWASM.readBarcodes(ctx.getImageData(0, 0, canvas.width, canvas.height), { formats: ["EAN-13", "EAN-8", "UPC-A", "UPC-E", "ITF", "Code128"], tryHarder: true, tryRotate: true, maxNumberOfSymbols: 1 });
+        var hit = res.find(function (r) { return r.isValid && r.text; });
+        if (hit && !paused) detected(hit.text);
+      } catch (e) {}
+      busy = false;
+    }
+    requestAnimationFrame(loop);
+  }
+  function resume() {
+    paused = false;
+    $("aim").classList.remove("hit"); $("tick").classList.remove("on");
+  }
+
+  /* ---------- detected ---------- */
+  function detected(code) {
+    if (code === lastCode && performance.now() < quietUntil) return;
+    lastCode = code;
+    paused = true;
+    $("aim").classList.add("hit");
+    var tk = $("tick"); tk.classList.remove("on"); void tk.offsetWidth; tk.classList.add("on");
+    beep();
+    var map = BARCODES[code];
+    setTimeout(function () {
+      if (map && sku(map.code)) openCount(sku(map.code), code, map.uom);
+      else openUnknown(code);
+    }, 450);
+  }
+
+  /* ---------- sheet ---------- */
+  function openSheet(build) {
+    var sh = $("sheet"); sh.textContent = ""; build(sh);
+    $("shade").classList.add("on"); sh.classList.add("on");
+  }
+  function closeSheet(andResume) {
+    $("sheet").classList.remove("on"); $("shade").classList.remove("on");
+    quietUntil = performance.now() + 3000;
+    if (andResume && running) setTimeout(resume, 250);
+  }
+  $("shade").addEventListener("click", function () { closeSheet(true); });
+
+  function openCount(s, barcode, uom) {
+    var batch = s.batches.length === 1 ? s.batches[0] : null;
+    var counted = Object.keys(lines).filter(function (k) { return k.split("|")[0] === s.code; });
+    if (!batch && counted.length === 1) batch = counted[0].split("|")[1] || "";
+    openSheet(function (sh) {
+      var vals = { ctn: null, box: null, pcs: null };
+      var prevBox = el("div", { "class": "prev hidden" });
+      var totalEl = el("span", { text: "0 pcs" });
+      var saveBtn = el("button", { "class": "btn grow", type: "button", text: "Simpan & scan lagi" });
+      var inputs = {};
+      function loadPrev() {
+        var l = batch != null ? lines[key(s.code, batch)] : null;
+        if (l) { vals = { ctn: l.ctn, box: l.box, pcs: l.pcs }; prevBox.textContent = "SKU ini sudah dihitung di batch " + bLabel(batch) + ": " + fmt(toPcs(s, l)) + " pcs. Ubah angkanya kalau perlu, angka lama akan diganti."; prevBox.classList.remove("hidden"); }
+        else { vals = { ctn: null, box: null, pcs: null }; prevBox.classList.add("hidden"); }
+        Object.keys(inputs).forEach(function (f) { inputs[f].value = vals[f] == null ? "" : vals[f]; });
+        upd();
+      }
+      function upd() {
+        totalEl.textContent = fmt(toPcs(s, vals)) + " pcs";
+        var any = vals.ctn != null || vals.box != null || vals.pcs != null;
+        saveBtn.disabled = batch == null || !any;
+        saveBtn.textContent = batch == null ? "Pilih bulan batch dulu" : !any ? "Isi jumlahnya dulu" : "Simpan & scan lagi";
+      }
+      function stepper(f, label, sub) {
+        var inp = el("input", { type: "number", inputmode: "numeric", min: "0", step: "1", placeholder: "0", "aria-label": label });
+        inp.addEventListener("input", function () { var n = inp.value === "" ? null : Math.max(0, Math.floor(Number(inp.value))); vals[f] = isNaN(n) ? null : n; upd(); });
+        inputs[f] = inp;
+        var row = el("div", { "class": "step" }, [
+          el("div", { "class": "lab" }, [document.createTextNode(label), sub ? el("small", { text: sub }) : null]),
+          el("button", { type: "button", "aria-label": "Kurangi " + label, text: "−", onclick: function () { vals[f] = Math.max(0, (vals[f] || 0) - 1); inp.value = vals[f]; upd(); } }),
+          inp,
+          el("button", { type: "button", "aria-label": "Tambah " + label, text: "+", onclick: function () { vals[f] = (vals[f] || 0) + 1; inp.value = vals[f]; upd(); } })
+        ]);
+        return row;
+      }
+      var chips = el("div", { "class": "chips", role: "group", "aria-label": "Bulan batch" });
+      function drawChips() {
+        chips.textContent = "";
+        var list = s.batches.slice(); Object.keys(lines).forEach(function (k) { var p = k.split("|"); if (p[0] === s.code && list.indexOf(p[1]) < 0) list.push(p[1]); });
+        list.forEach(function (b) {
+          chips.appendChild(el("button", { type: "button", "class": "chip" + (batch === b ? " on" : ""), "aria-pressed": String(batch === b), text: bLabel(b), onclick: function () { batch = b; drawChips(); loadPrev(); } }));
+        });
+        chips.appendChild(el("button", { type: "button", "class": "chip" + (batch === "" ? " on" : ""), "aria-pressed": String(batch === ""), text: "Tanpa tanggal", onclick: function () { batch = ""; drawChips(); loadPrev(); } }));
+        chips.appendChild(el("button", { type: "button", "class": "chip", text: "+ Batch lain", onclick: function () {
+          var v = prompt("Bulan batch (contoh 2027-04)", "");
+          if (v && /^\d{4}-(0[1-9]|1[0-2])$/.test(v.trim())) { batch = v.trim(); if (s.batches.indexOf(batch) < 0) s.batches.push(batch); drawChips(); loadPrev(); }
+        } }));
+      }
+      var steps = [stepper("ctn", "Carton", "1 ctn = " + s.per + " pcs")];
+      if (s.perBox) steps.push(stepper("box", "Box", "1 box = " + s.perBox + " pcs"));
+      steps.push(stepper("pcs", "Pieces", null));
+      saveBtn.addEventListener("click", function () {
+        if (saveBtn.disabled) return;
+        lines[key(s.code, batch)] = { ctn: vals.ctn, box: vals.box, pcs: vals.pcs };
+        renderDone(); closeSheet(true);
+        toast("Tersimpan: " + s.code + " · " + bLabel(batch) + " · " + fmt(toPcs(s, vals)) + " pcs");
+      });
+      sh.append(
+        el("div", { "class": "found" }, [document.createTextNode("✓ Barcode terbaca"), el("span", { "class": "muted", text: barcode ? "· " + barcode + (uom === "CTN" ? " (karton)" : "") : "· dipilih manual" })]),
+        el("div", { "class": "skuname", id: "sheetTitle", text: s.name }),
+        el("div", { "class": "muted", text: s.code }),
+        prevBox,
+        el("div", { style: "font-weight:600;margin-top:12px", text: "Bulan batch" }),
+        chips
+      );
+      steps.forEach(function (x) { sh.append(x); });
+      sh.append(el("div", { "class": "total" }, [document.createTextNode("Total"), totalEl]),
+        el("div", { "class": "row" }, [el("button", { "class": "btn sec", type: "button", text: "Batal", onclick: function () { closeSheet(true); } }), saveBtn]));
+      drawChips(); loadPrev();
+      var focusF = uom === "CTN" ? "ctn" : null;
+      if (focusF && inputs[focusF]) { inputs[focusF].parentNode.classList.add("focus"); setTimeout(function () { inputs[focusF].focus(); }, 300); }
+    });
+  }
+
+  function openUnknown(barcode) {
+    openSheet(function (sh) {
+      var q = el("input", { type: "search", placeholder: "Cari kode atau nama SKU", "aria-label": "Cari SKU" });
+      var list = el("div");
+      function draw() {
+        list.textContent = ""; var w = q.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        SKUS.filter(function (s) { var t = (s.code + " " + s.name).toLowerCase(); return w.every(function (x) { return t.indexOf(x) >= 0; }); })
+          .forEach(function (s) { list.appendChild(el("button", { type: "button", "class": "pick", onclick: function () { closeSheet(false); setTimeout(function () { openCount(s, barcode, null); }, 260); } }, [document.createTextNode(s.name), el("small", { text: s.code })])); });
+      }
+      q.addEventListener("input", draw);
+      sh.append(
+        el("div", { "class": barcode ? "unk" : "found" }, [document.createTextNode(barcode ? "Barcode belum terdaftar" : "Cari SKU"), barcode ? el("span", { "class": "muted", text: "· " + barcode }) : null]),
+        el("div", { "class": "skuname", id: "sheetTitle", text: barcode ? "Pilih SKU-nya" : "Pilih SKU yang dihitung" }),
+        barcode ? el("div", { "class": "muted", text: "Barcode ini dicatat untuk Finance supaya master barcode bisa dilengkapi." }) : null,
+        el("div", { style: "height:10px" }), q, list,
+        el("div", { "class": "row", style: "margin-top:12px" }, [el("button", { "class": "btn sec grow", type: "button", text: "Batal, scan lagi", onclick: function () { closeSheet(true); } })])
+      );
+      draw(); setTimeout(function () { q.focus(); }, 300);
+    });
+  }
+
+  function renderDone() {
+    var tb = $("done"); tb.textContent = ""; var ks = Object.keys(lines);
+    $("cnt").textContent = "(" + ks.length + ")";
+    ks.forEach(function (k) {
+      var p = k.split("|"), s = sku(p[0]), l = lines[k], parts = [];
+      if (l.ctn) parts.push(l.ctn + " ctn"); if (l.box) parts.push(l.box + " box"); if (l.pcs) parts.push(l.pcs + " pcs");
+      tb.appendChild(el("tr", {}, [el("td", { text: s.code }), el("td", { text: bLabel(p[1]) }), el("td", { text: parts.join(" + ") || "0" }), el("td", { "class": "n", text: fmt(toPcs(s, l)) })]));
+    });
+  }
+
+  $("start").addEventListener("click", start);
+  $("manual").addEventListener("click", function () { paused = true; openUnknown(null); });
+  document.addEventListener("visibilitychange", function () { if (document.hidden && stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; running = false; $("idle").classList.remove("hidden"); $("aim").classList.add("hidden"); $("hint").classList.add("hidden"); } });
+})();
+</script>
+</body>
+</html>

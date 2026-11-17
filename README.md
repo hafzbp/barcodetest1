@@ -12,3 +12,6 @@ Halaman uji pembaca barcode untuk NDD Stock Count v2. Halaman ini hanya membaca 
 3. Tekan **Salin hasil** dan kirim hasilnya. Info HP ikut tersalin.
 
 Target lulus: minimal 19 dari 20 barcode terbaca dalam 3 detik.
+
+## Prototipe alur hitung: `scan-flow/`
+Alur yang akan dipakai di app: scan, tanda ceklis dan getar, nama SKU muncul, pilih bulan batch, isi Carton / Box / Pieces, simpan, lalu kamera siap untuk barang berikutnya. SKU di prototipe ini contoh; barcode yang tidak dikenal masuk ke alur "barcode belum terdaftar" dengan pencarian SKU.
