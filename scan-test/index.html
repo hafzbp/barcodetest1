@@ -53,6 +53,7 @@ input[type=text]{width:100%;font:inherit;padding:12px;border:1px solid var(--lin
       <button id="torch" class="btn sec hidden" type="button" aria-pressed="false">Senter</button>
     </div>
     <p class="muted" id="status">Kamera belum dibuka.</p>
+    <button id="next" class="btn hidden" type="button" style="width:100%;margin-bottom:8px">Scan berikutnya</button>
     <div id="view" aria-label="Pratinjau kamera">
       <video id="video" playsinline muted autoplay></video>
       <div id="aim"></div>
@@ -73,12 +74,18 @@ input[type=text]{width:100%;font:inherit;padding:12px;border:1px solid var(--lin
 
   <div class="card">
     <div class="row">
-      <div class="grow"><b>Riwayat scan</b> <span class="muted" id="count">(0)</span></div>
-      <button id="copy" class="btn sec" type="button">Salin hasil</button>
+      <div class="grow"><b>Riwayat scan</b> <span class="muted" id="count">(0)</span> <span class="muted" id="distinct"></span></div>
       <button id="clear" class="btn sec" type="button">Hapus</button>
     </div>
+    <div class="row" style="margin-top:8px">
+      <button id="share" class="btn grow hidden" type="button">Bagikan hasil</button>
+      <button id="copy" class="btn sec grow" type="button">Salin hasil</button>
+      <a id="wa" class="btn sec grow" style="text-align:center;text-decoration:none;line-height:24px" href="#" target="_blank" rel="noopener">Kirim ke WhatsApp</a>
+    </div>
+    <p class="muted" id="copyMsg" role="status" style="min-height:18px;margin:8px 0 0"></p>
+    <textarea id="outText" class="hidden" readonly rows="8" style="width:100%;font:13px ui-monospace,monospace;padding:8px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)" aria-label="Teks hasil scan"></textarea>
     <table>
-      <thead><tr><th>#</th><th>Barcode</th><th>Jenis</th><th>Waktu baca</th><th>Sumber</th></tr></thead>
+      <thead><tr><th>#</th><th>Barcode</th><th>Jenis</th><th>Waktu baca</th><th>Sumber</th><th></th></tr></thead>
       <tbody id="log"></tbody>
     </table>
   </div>
@@ -94,8 +101,8 @@ input[type=text]{width:100%;font:inherit;padding:12px;border:1px solid var(--lin
 (function () {
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
-  var video = $("video"), stream = null, track = null, running = false, busy = false;
-  var tStart = 0, lastText = "", lastAt = 0, scans = [];
+  var video = $("video"), stream = null, track = null, running = false, busy = false, paused = false;
+  var tStart = 0, scans = [];
   var canvas = document.createElement("canvas"), ctx = canvas.getContext("2d", { willReadFrequently: true });
   var ready = null, frameNo = 0, SCALES = [1, 0.7, 0.5];
 
@@ -171,7 +178,7 @@ input[type=text]{width:100%;font:inherit;padding:12px;border:1px solid var(--lin
     $("start").disabled = false;
     describeDevice(track.getSettings ? track.getSettings() : null);
     status("Kamera aktif. Arahkan barcode ke kotak.");
-    running = true; tStart = performance.now();
+    running = true; paused = false; tStart = performance.now(); $("next").classList.add("hidden");
     loop();
   }
 
@@ -187,7 +194,7 @@ input[type=text]{width:100%;font:inherit;padding:12px;border:1px solid var(--lin
 
   async function loop() {
     if (!running) return;
-    if (!busy && video.readyState >= 2 && video.videoWidth) {
+    if (!busy && !paused && video.readyState >= 2 && video.videoWidth) {
       busy = true;
       try {
         var vw = video.videoWidth, vh = video.videoHeight;
@@ -214,23 +221,38 @@ input[type=text]{width:100%;font:inherit;padding:12px;border:1px solid var(--lin
 
   function found(text, format, source) {
     var now = performance.now();
-    if (text === lastText && now - lastAt < 2500) return;
+    if (source === "kamera") {
+      if (paused) return;
+      paused = true;
+      $("next").classList.remove("hidden");
+      status("Terbaca. Arahkan ke barang berikutnya lalu tekan Scan berikutnya.");
+    }
     var secs = source === "kamera" ? ((now - tStart) / 1000) : null;
-    lastText = text; lastAt = now; tStart = now;
+    var repeat = scans.some(function (x) { return x.text === text; });
     $("result").textContent = text;
-    $("resultMeta").textContent = format + (secs != null ? " · terbaca dalam " + secs.toFixed(1) + " detik" : "") + " · " + source;
+    $("resultMeta").textContent = format + (secs != null ? " · terbaca dalam " + secs.toFixed(1) + " detik" : "") + " · " + source + (repeat ? " · barcode ini sudah pernah discan" : "");
     $("aim").classList.add("hit"); setTimeout(function () { $("aim").classList.remove("hit"); }, 600);
     if (navigator.vibrate) navigator.vibrate(80);
-    scans.unshift({ text: text, format: format, secs: secs, source: source, at: new Date() });
+    scans.unshift({ text: text, format: format, secs: secs, source: source, repeat: repeat, at: new Date() });
     render();
+  }
+
+  function nextScan() {
+    paused = false; tStart = performance.now();
+    $("next").classList.add("hidden");
+    status("Kamera aktif. Arahkan barcode ke kotak.");
   }
 
   function render() {
     $("count").textContent = "(" + scans.length + ")";
+    var uniq = {}; scans.forEach(function (x) { uniq[x.text] = 1; });
+    var times = scans.filter(function (x) { return x.secs != null && !x.repeat; }).map(function (x) { return x.secs; });
+    var fast = times.filter(function (t) { return t <= 3; }).length;
+    $("distinct").textContent = scans.length ? "· " + Object.keys(uniq).length + " barcode berbeda" + (times.length ? " · " + fast + " dari " + times.length + " terbaca ≤ 3 detik" : "") : "";
     var tb = $("log"); tb.textContent = "";
     scans.forEach(function (s, i) {
       var tr = document.createElement("tr");
-      [String(scans.length - i), s.text, s.format, s.secs != null ? s.secs.toFixed(1) + " dtk" : "-", s.source].forEach(function (v) {
+      [String(scans.length - i), s.text, s.format, s.secs != null ? s.secs.toFixed(1) + " dtk" : "-", s.source, s.repeat ? "ulang" : ""].forEach(function (v) {
         var td = document.createElement("td"); td.textContent = v; tr.appendChild(td);
       });
       tb.appendChild(tr);
@@ -247,6 +269,7 @@ input[type=text]{width:100%;font:inherit;padding:12px;border:1px solid var(--lin
   });
 
   $("start").addEventListener("click", start);
+  $("next").addEventListener("click", nextScan);
   $("stop").addEventListener("click", stop);
   $("torch").addEventListener("click", async function () {
     if (!track) return;
@@ -254,11 +277,46 @@ input[type=text]{width:100%;font:inherit;padding:12px;border:1px solid var(--lin
     try { await track.applyConstraints({ advanced: [{ torch: on }] }); $("torch").setAttribute("aria-pressed", String(on)); $("torch").textContent = on ? "Senter mati" : "Senter"; }
     catch (e) { status("Senter tidak didukung di HP ini."); }
   });
-  $("clear").addEventListener("click", function () { scans = []; lastText = ""; render(); $("result").textContent = "-"; $("resultMeta").textContent = ""; });
-  $("copy").addEventListener("click", async function () {
-    var txt = ["Barcode\tJenis\tDetik\tSumber"].concat(scans.slice().reverse().map(function (s) { return [s.text, s.format, s.secs != null ? s.secs.toFixed(1) : "", s.source].join("\t"); })).join("\n") + "\n\n" + $("device").textContent;
-    try { await navigator.clipboard.writeText(txt); status("Hasil disalin. Tempel di chat."); }
-    catch (e) { status("Gagal menyalin. Screenshot tabel ini saja."); }
+  $("clear").addEventListener("click", function () { scans = []; render(); $("result").textContent = "-"; $("resultMeta").textContent = ""; });
+  function resultText() {
+    var rows = scans.slice().reverse().map(function (s, i) {
+      return (i + 1) + ". " + s.text + " | " + s.format + " | " + (s.secs != null ? s.secs.toFixed(1) + " dtk" : "-") + " | " + s.source + (s.repeat ? " | ulang" : "");
+    });
+    return "Hasil uji scan: " + scans.length + " scan " + $("distinct").textContent + "\n" + (rows.join("\n") || "(belum ada scan)") + "\n\n" + $("device").textContent;
+  }
+  function copyMsg(t) { $("copyMsg").textContent = t; }
+  function legacyCopy(txt) {
+    var ta = document.createElement("textarea");
+    ta.value = txt; ta.setAttribute("readonly", ""); ta.style.position = "absolute"; ta.style.left = "-9999px";
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, txt.length);
+    var ok = false; try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta); return ok;
+  }
+  function showText(txt) {
+    var o = $("outText"); o.value = txt; o.classList.remove("hidden"); o.focus(); o.select();
+  }
+  $("copy").addEventListener("click", function () {
+    var txt = resultText();
+    var done = function () { copyMsg("Hasil disalin. Tempel di chat."); };
+    var fail = function () {
+      if (legacyCopy(txt)) { done(); return; }
+      showText(txt);
+      copyMsg("Browser ini tidak mengizinkan salin otomatis. Teks sudah ditampilkan di bawah: tekan lama, Pilih semua, lalu Salin. Atau pakai tombol Kirim ke WhatsApp.");
+    };
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(txt).then(done, fail);
+    else fail();
+  });
+  if (navigator.share) {
+    $("share").classList.remove("hidden");
+    $("share").addEventListener("click", function () {
+      navigator.share({ title: "Hasil uji scan", text: resultText() }).then(function () { copyMsg("Hasil dibagikan."); }, function (e) {
+        if (e && e.name === "AbortError") return;
+        showText(resultText()); copyMsg("Gagal membuka menu bagikan. Teks ditampilkan di bawah.");
+      });
+    });
+  }
+  $("wa").addEventListener("click", function () {
+    this.href = "https://wa.me/?text=" + encodeURIComponent(resultText());
   });
   document.addEventListener("visibilitychange", function () { if (document.hidden && running) stop(); });
 })();
